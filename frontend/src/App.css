@@ -1,0 +1,123 @@
+/* 전체 페이지 다크 테마 */
+body, html {
+  background-color: #121212;
+  color: #ffffff;
+  font-family: Arial, sans-serif;
+  margin: 0;
+  padding: 0;
+  height: 100%;
+}
+
+/* App 전체 레이아웃 */
+.App {
+  display: flex;
+  height: 100vh;
+}
+
+/* 입력 및 출력 섹션 크기 조정 */
+.split {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 20px;
+}
+
+/* 왼쪽 (입력) / 오른쪽 (출력) */
+.left {
+  background-color: #1e1e1e;
+}
+
+.right {
+  background-color: #252525;
+}
+
+/* 코드 입력 창 스타일 */
+.input-container h2,
+.output-container h2 {
+  color: #FFFFFF;
+}
+
+.input-container {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+  text-align: left
+}
+
+textarea {
+  width: 100%;
+  height: 300px;
+  background-color: #2d2d2d;
+  color: #ffffff;
+  border: 1px solid #444;
+  padding: 10px;
+  font-size: 14px;
+}
+
+/* 버튼 스타일 */
+button {
+  background-color: #3264a8;
+  color: white;
+  border: none;
+  padding: 10px 15px;
+  font-size: 16px;
+  cursor: pointer;
+  transition: 0.3s;
+}
+
+button:hover {
+  background-color: #3264a8;
+}
+
+/* 파일 업로드 */
+.file-upload-container {
+  margin-top: 20px;
+  text-align: center;
+}
+
+input[type="file"] {
+  background-color: #121212;
+  color: #ffffff;
+  border: none;
+  padding: 8px;
+}
+
+/* 분석 결과 */
+.output-container {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+}
+
+/* 코드 출력창 */
+.code-output {
+  background-color: #2d2d2d;
+  padding: 10px;
+  border-radius: 5px;
+  color: #ffffff;
+  white-space: pre-wrap;
+}
+
+/* 보안 취약점 리스트 */
+.vulnerabilities h3 {
+  color: #fa0000;
+}
+
+.vulnerabilities ul {
+  list-style-type: none;
+  padding: 0;
+}
+
+.vulnerabilities li {
+  background-color: #b30000;
+  padding: 10px;
+  margin-bottom: 5px;
+  border-radius: 3px;
+}
+
+/* 파일 검사 결과 */
+.feedback h3 {
+  color: #FFFFFF;
+}
