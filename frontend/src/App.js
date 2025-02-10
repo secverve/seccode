@@ -1,130 +1,107 @@
-import React, { useState } from 'react';
-import Editor from '@monaco-editor/react';
-import './App.css';
+import React, { useState } from "react";
+import Editor from "@monaco-editor/react";
+import "./App.css";
 
 function App() {
-    const [code, setCode] = useState('');
-    const [feedback, setFeedback] = useState('');
-    const [language, setLanguage] = useState('');
+    const [code, setCode] = useState("");
     const [vulnerabilities, setVulnerabilities] = useState([]);
-    const [loading, setLoading] = useState(false);
     const [selectedFile, setSelectedFile] = useState(null);
-    const [fileFeedback, setFileFeedback] = useState('');
+    const [language, setLanguage] = useState("");
 
     const analyzeCode = () => {
-        setLoading(true);
-        fetch('http://localhost:5000/analyze-code', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ code })
+        fetch("http://localhost:5000/analyze-code", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ code }),
         })
-        .then(response => response.json())
-        .then(data => {
-            setFeedback(data.bandit_analysis || '보안 취약점 없음');
+        .then((response) => response.json())
+        .then((data) => {
             setLanguage(`언어 감지: ${data.language}`);
-            setVulnerabilities(data.pylint_analysis ? data.pylint_analysis.split('\n') : []);
+            setVulnerabilities(data.vulnerabilities || []);
         })
-        .catch(error => {
-            console.error('❌ 오류 발생:', error);
-            setFeedback('서버에서 오류가 발생했습니다.');
-            setLanguage('언어 감지 실패');
-            setVulnerabilities([]);
-        })
-        .finally(() => setLoading(false));
+        .catch((error) => console.error("❌ [ERROR] 코드 분석 요청 실패:", error));
     };
 
     const handleFileUpload = () => {
         if (selectedFile) {
             const formData = new FormData();
-            formData.append('file', selectedFile);
+            formData.append("file", selectedFile);
 
-            fetch('http://localhost:5000/upload', {
-                method: 'POST',
+            fetch("http://localhost:5000/upload", {
+                method: "POST",
                 body: formData,
             })
-            .then(response => response.json())
-            .then(data => {
-                setFileFeedback(`파일 이름: ${data.fileName}, 결과: ${data.message}`);
-                setFeedback(data.highlightedCode || '분석 결과를 여기에 표시합니다.');
-                setLanguage(`언어: ${data.language}`);
-                setVulnerabilities(data.feedback || []);
+            .then((response) => response.json())
+            .then((data) => {
+                setLanguage(`언어 감지: ${data.language}`);
+                setVulnerabilities(data.vulnerabilities || []);
             })
-            .catch(error => {
-                console.error('Error:', error);
-                setFileFeedback('파일 업로드 중 오류가 발생했습니다.');
-                setFeedback('');
-                setLanguage('');
-                setVulnerabilities([]);
-            });
-        } else {
-            setFileFeedback('업로드할 파일을 선택하세요.');
+            .catch((error) => console.error("❌ [ERROR] 파일 업로드 실패:", error));
         }
     };
 
     return (
-        <div className="App dark-theme">
+        <div className="App">
             <div className="split left">
-                <div className="input-container" style={{ width: '100%', height: '100%' }}>
+                <div className="input-container">
                     <h2>소스코드 입력</h2>
                     <Editor
                         height="500px"
                         width="100%"
-                        defaultLanguage="javascript"
-                        theme="vs-dark" // 어두운 테마 적용
-                        options={{
-                            fontSize: 14,
-                            minimap: { enabled: false },
-                            automaticLayout: true,
-                            suggestOnTriggerCharacters: true,
-                            wordBasedSuggestions: true,
-                            quickSuggestions: true,
-                            cursorBlinking: "smooth",
-                            fontLigatures: true,
-                            renderWhitespace: "all",
-                            renderLineHighlight: "all",
-                            scrollbar: {
-                                vertical: "visible",
-                                horizontal: "visible"
-                            },
-                            overviewRulerBorder: false
-                        }}
+                        defaultLanguage="python"
+                        theme="vs-dark"
                         value={code}
                         onChange={(value) => setCode(value)}
+                        options={{
+                            automaticLayout: true,
+                            minimap: { enabled: false },
+                            fontSize: 14,
+                        }}
                     />
-                    <button onClick={analyzeCode} disabled={loading}>
-                        {loading ? '분석 중...' : '코드 분석'}
+                    <button className="analyze-button" onClick={analyzeCode}>
+                        코드 분석
                     </button>
+
                     <div className="file-upload-container">
                         <h2>파일 업로드</h2>
                         <input
                             type="file"
                             onChange={(e) => setSelectedFile(e.target.files[0])}
                         />
-                        <button onClick={handleFileUpload} className="upload-button">업로드</button>
+                        <button onClick={handleFileUpload} className="upload-button">
+                            업로드
+                        </button>
                     </div>
                 </div>
             </div>
+
             <div className="split right">
-                <div className="output-container" style={{ width: '100%', height: '100%' }}>
+                <div className="output-container">
                     <h2>분석 결과</h2>
                     <p>{language}</p>
-                    <div className="code-output">
-                        <pre>{feedback}</pre>
-                    </div>
-                    {vulnerabilities.length > 0 && (
+
+                    {vulnerabilities.length > 0 ? (
                         <div className="vulnerabilities">
-                            <h3>코드 스타일 및 보안 경고</h3>
+                            <h3>🛡️ 보안 취약점 목록</h3>
                             <ul>
                                 {vulnerabilities.map((vuln, index) => (
-                                    <li key={index}>{vuln}</li>
+                                    <li key={index} className="vulnerability-item">
+                                        <strong>🚨 취약점 유형:</strong> {vuln.type}
+                                        <br />
+                                        <strong>📌 코드:</strong>
+                                        <pre className="vulnerable-code">{vuln.code}</pre>
+                                        <br />
+                                        <strong>📝 설명:</strong> {vuln.description}
+                                        <br />
+                                        <strong>🛠 해결책:</strong>
+                                        <pre className="solution-text">{vuln.solution}</pre>
+                                    </li>
                                 ))}
                             </ul>
                         </div>
+                    ) : (
+                        <p>🔍 취약점이 감지되지 않았습니다.</p>
                     )}
-                    <div className="feedback">
-                        <h3>파일 검사 결과:</h3>
-                        <p>{fileFeedback}</p>
-                    </div>
                 </div>
             </div>
         </div>

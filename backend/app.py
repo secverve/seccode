@@ -1,114 +1,142 @@
 from flask import Flask, request, jsonify
 import os
-from werkzeug.utils import secure_filename
+import subprocess
+import tempfile
+import json
+import google.generativeai as genai  # ✅ Google Gemini API
 from flask_cors import CORS
-from guesslang import Guess
-from pygments.lexers import guess_lexer
-from pygments.util import ClassNotFound
-import re
+from deep_translator import GoogleTranslator
 
 app = Flask(__name__)
 CORS(app)
 
-UPLOAD_FOLDER = 'uploads'
-ALLOWED_EXTENSIONS = {'py', 'txt', 'js', 'java', 'cpp', 'c', 'go'}
-
-app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+UPLOAD_FOLDER = "uploads"
+ALLOWED_EXTENSIONS = {"py", "txt"}
+app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
 
 if not os.path.exists(UPLOAD_FOLDER):
     os.makedirs(UPLOAD_FOLDER)
 
-def allowed_file(filename):
-    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+# ✅ Google Gemini API 키 설정
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+if not GEMINI_API_KEY:
+    GEMINI_API_KEY = "your-gemini-api-key"  # 환경 변수에서 가져오도록 변경 가능
 
-# 1️⃣ Guesslang 기반 언어 감지 (최우선)
-def detect_language_guesslang(code):
-    guess = Guess()
+genai.configure(api_key=GEMINI_API_KEY)
+
+# ✅ 번역기 (deep-translator 사용)
+def translate_text(text):
     try:
-        detected_language = guess.language_name(code)
-        return detected_language if detected_language else "Unknown"
+        return GoogleTranslator(source="en", target="ko").translate(text)
     except Exception as e:
-        print(f"Guesslang 오류 발생: {e}")
-        return "Unknown"
+        print(f"⚠️ [ERROR] 번역 실패: {e}")
+        return text  # 번역 실패 시 원본 반환
 
-# 2️⃣ Pygments 기반 언어 감지 (Guesslang이 특정 언어로 오탐할 경우만 사용)
-def detect_language_pygments(code):
+# ✅ Google Gemini 기반 해결책 생성
+def generate_fix_with_gemini(description, vulnerable_code):
+    prompt = f"""
+    아래의 코드는 보안 취약점이 감지된 코드입니다:
+
+    취약한 코드:
+    ```python
+    {vulnerable_code}
+    ```
+
+    취약점 설명:
+    {description}
+
+    이 문제를 해결하려면 어떻게 수정해야 할까요? 
+    올바른 보안 패턴을 사용하여 이 문제를 해결하는 코드 예제를 제시하세요.
+    """
+
     try:
-        lexer = guess_lexer(code)
-        return lexer.name
-    except ClassNotFound:
-        return "Unknown"
+        model = genai.GenerativeModel("gemini-pro")
+        response = model.generate_content(prompt)
+        return f"✅ Gemini 추천 해결책:\n{response.text}"
+    except Exception as e:
+        print(f"⚠️ [ERROR] Gemini 해결책 생성 실패: {e}")
+        return "✅ 해결책: 보안 권장 사항을 검토하세요."
 
-# 3️⃣ 정규식 기반 언어 감지 (Guesslang + Pygments가 실패할 경우 보조 역할)
-def detect_language_regex(code):
-    patterns = {
-        'Python': [r'def\s+\w+\(', r'import\s+\w+', r'print\s*\(', r'if\s+__name__\s*==\s*["\']__main__["\']'],
-        'JavaScript': [r'function\s+\w+\(', r'console\.log\(', r'var\s+\w+\s*=', r'let\s+\w+\s*='],
-        'Java': [r'public\s+class\s+\w+', r'public\s+static\s+void\s+main', r'System\.out\.println'],
-        'C': [r'#include\s+<\w+>', r'int\s+main\s*\(\)', r'printf\s*\('],
-        'C++': [r'#include\s+<\w+>', r'std::cout\s*<<', r'int\s+main\s*\(\)'],
-        'Go': [r'package\s+main', r'func\s+main\(\)', r'import\s+"fmt"'],
-    }
+# ✅ Bandit 기반 취약점 분석
+def analyze_with_bandit(code):
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False, encoding="utf-8") as temp_file:
+        temp_file.write(code)
+        temp_file_path = temp_file.name
 
-    for language, keywords in patterns.items():
-        if any(re.search(keyword, code, re.IGNORECASE) for keyword in keywords):
-            return language
+    try:
+        bandit_cmd = ["bandit", "-r", temp_file_path, "-f", "json"]
+        result = subprocess.run(bandit_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
 
-    return "Unknown"
+        if result.returncode not in [0, 1]:  
+            return [{"error": "Bandit 분석 중 오류 발생"}]
 
-# ✅ 최종 언어 감지 (1️⃣ Guesslang → 2️⃣ Pygments (YAML, Text Only 예외 처리) → 3️⃣ 정규식)
-def detect_language(code):
-    language = detect_language_guesslang(code)
-    # 🔥 Guesslang이 특정 오탐 언어(YAML, Text Only, Tera Term macro)로 감지되면 Pygments 사용
-    if language in ["Groovy", "Unknown", "YAML", "Text only", "Tera Term macro"]:
-        language = detect_language_pygments(code)
+        bandit_output = json.loads(result.stdout)
 
-    # 🔥 Pygments가 "Text Only"로 감지되면 정규식 사용
-    if language == "Text only":
-        language = detect_language_regex(code)
+        vulnerabilities = []
+        for issue in bandit_output.get("results", []):
+            test_id = issue.get("test_id", "Unknown")
+            description = issue.get("issue_text", "N/A")
+            translated_description = translate_text(description)
 
-    return language
+            # ✅ 취약한 코드 가져오기
+            vulnerable_code = "취약한 코드 없음"
+            if "code" in issue and isinstance(issue["code"], list):
+                vulnerable_code = "\n".join(issue["code"])
 
-@app.route('/analyze-code', methods=['POST'])
+            # ✅ Gemini 기반 해결책 생성
+            suggested_fix = generate_fix_with_gemini(translated_description, vulnerable_code)
+
+            vulnerabilities.append({
+                "type": test_id,
+                "code": vulnerable_code,
+                "description": translated_description,
+                "solution": suggested_fix,
+            })
+
+        return vulnerabilities
+    finally:
+        os.remove(temp_file_path)
+
+@app.route("/analyze-code", methods=["POST"])
 def analyze_code():
     data = request.get_json()
-    code = data.get('code', '')
+    code = data.get("code", "")
 
     if not code:
-        return jsonify({'error': '코드가 제공되지 않았습니다.'}), 400
+        return jsonify({"error": "코드가 제공되지 않았습니다."}), 400
 
-    detected_language = detect_language(code)
+    vulnerabilities = analyze_with_bandit(code)
 
     return jsonify({
-        'language': detected_language
+        "vulnerabilities": vulnerabilities
     })
 
-@app.route('/upload', methods=['POST'])
+@app.route("/upload", methods=["POST"])
 def upload_file():
-    if 'file' not in request.files:
-        return jsonify({'error': '파일이 제공되지 않았습니다.'}), 400
+    if "file" not in request.files:
+        return jsonify({"error": "파일이 제공되지 않았습니다."}), 400
 
-    file = request.files['file']
-    if file.filename == '':
-        return jsonify({'error': '파일이 선택되지 않았습니다.'}), 400
+    file = request.files["file"]
+    if file.filename == "":
+        return jsonify({"error": "파일이 선택되지 않았습니다."}), 400
 
-    if file and allowed_file(file.filename):
-        filename = secure_filename(file.filename)
-        file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+    if file and file.filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS:
+        filename = file.filename
+        file_path = os.path.join(app.config["UPLOAD_FOLDER"], filename)
         file.save(file_path)
 
-        with open(file_path, 'r', encoding='utf-8') as f:
+        with open(file_path, "r", encoding="utf-8") as f:
             code = f.read()
 
-        detected_language = detect_language(code)
+        vulnerabilities = analyze_with_bandit(code)
 
         return jsonify({
-            'fileName': filename,
-            'message': '파일 분석 완료',
-            'language': detected_language
+            "fileName": filename,
+            "message": "파일 분석 완료",
+            "vulnerabilities": vulnerabilities
         })
 
-    return jsonify({'error': '허용되지 않는 파일 형식입니다.'}), 400
+    return jsonify({"error": "허용되지 않는 파일 형식입니다."}), 400
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     app.run(debug=True)
