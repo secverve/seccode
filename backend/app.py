@@ -18,8 +18,9 @@ CORS(app)
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 genai.configure(api_key=GEMINI_API_KEY)
 
-# ✅ 업로드 폴더 생성
-UPLOAD_FOLDER = "uploads"
+# ✅ 업로드 폴더를 프로젝트 폴더 밖으로 분리 (예: backend 폴더의 상위 폴더에 uploads 폴더 생성)
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+UPLOAD_FOLDER = os.path.join(BASE_DIR, "..", "uploads")
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 ALLOWED_EXTENSIONS = {"py", "txt", "js", "java", "cpp", "c", "go"}
@@ -27,15 +28,10 @@ ALLOWED_EXTENSIONS = {"py", "txt", "js", "java", "cpp", "c", "go"}
 # ✅ 언어 감지 (Guesslang → Pygments → 정규식)
 def detect_language(code):
     language = detect_language_guesslang(code)
-    
-    # Guesslang이 오탐한 경우 Pygments 사용
-    if language in ["YAML","Groovy","Unknown", "Text only"]:
+    if language in ["YAML", "Groovy", "Unknown", "Text only"]:
         language = detect_language_pygments(code)
-
-    # Pygments도 실패한 경우 정규식 사용
     if language == "Text only":
         language = detect_language_regex(code)
-
     return language
 
 def detect_language_guesslang(code):
@@ -71,34 +67,26 @@ def analyze_with_bandit(code):
     with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False, encoding="utf-8") as temp_file:
         temp_file.write(code)
         temp_file_path = temp_file.name
-
     try:
         bandit_cmd = ["bandit", "-r", temp_file_path, "-f", "json"]
         result = subprocess.run(bandit_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-
         if result.returncode not in [0, 1]:
             return [{"error": "Bandit 분석 중 오류 발생"}]
-
         bandit_output = json.loads(result.stdout)
-
         vulnerabilities = []
         for issue in bandit_output.get("results", []):
             test_id = issue.get("test_id", "Unknown")
             description = issue.get("issue_text", "N/A")
             translated_description = translate_text(description)
-
             raw_code = issue.get("code", "취약한 코드 없음")
             formatted_code = decode_bandit_code(raw_code)
-
             suggested_fix = generate_fix_with_gemini(translated_description, formatted_code)
-
             vulnerabilities.append({
                 "type": test_id,
                 "code": formatted_code,
                 "description": translated_description,
                 "solution": suggested_fix,
             })
-
         return vulnerabilities
     finally:
         os.remove(temp_file_path)
@@ -132,7 +120,6 @@ def generate_fix_with_gemini(description, vulnerable_code):
     이 문제를 해결하려면 어떻게 수정해야 할까요?
     올바른 보안 패턴을 사용하여 이 문제를 해결하는 코드 예제를 제시하세요.
     """
-
     try:
         model = genai.GenerativeModel("gemini-pro")
         response = model.generate_content(prompt)
@@ -145,13 +132,10 @@ def generate_fix_with_gemini(description, vulnerable_code):
 def analyze_code():
     data = request.get_json()
     code = data.get("code", "")
-
     if not code:
         return jsonify({"error": "코드가 제공되지 않았습니다."}), 400
-
     detected_language = detect_language(code)
     vulnerabilities = analyze_with_bandit(code)
-
     return jsonify({
         "language": detected_language,
         "vulnerabilities": vulnerabilities
@@ -165,28 +149,22 @@ def allowed_file(filename):
 def upload_file():
     if "file" not in request.files:
         return jsonify({"error": "파일이 제공되지 않았습니다."}), 400
-
     file = request.files["file"]
     if file.filename == "":
         return jsonify({"error": "파일이 선택되지 않았습니다."}), 400
-
     if file and allowed_file(file.filename):
         filename = os.path.join(UPLOAD_FOLDER, file.filename)
         file.save(filename)
-
         with open(filename, "r", encoding="utf-8") as f:
             code = f.read()
-
         detected_language = detect_language(code)
         vulnerabilities = analyze_with_bandit(code)
-
         return jsonify({
             "fileName": file.filename,
             "message": "파일 분석 완료",
             "language": detected_language,
             "vulnerabilities": vulnerabilities
         })
-
     return jsonify({"error": "허용되지 않는 파일 형식입니다."}), 400
 
 if __name__ == "__main__":
