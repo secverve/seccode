@@ -10,15 +10,20 @@ from deep_translator import GoogleTranslator
 from guesslang import Guess
 from pygments.lexers import guess_lexer
 from pygments.util import ClassNotFound
+import sys
 
 app = Flask(__name__)
 CORS(app)
+
+sys.stdout.reconfigure(encoding='utf-8')
+sys.stdin.reconfigure(encoding='utf-8')
+sys.stderr.reconfigure(encoding='utf-8')
 
 # ✅ Google Gemini API 설정
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 genai.configure(api_key=GEMINI_API_KEY)
 
-# ✅ 업로드 폴더를 프로젝트 폴더 밖으로 분리 (예: backend 폴더의 상위 폴더에 uploads 폴더 생성)
+# ✅ 업로드 폴더를 프로젝트 폴더 밖으로 분리 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 UPLOAD_FOLDER = os.path.join(BASE_DIR, "..", "uploads")
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
@@ -97,7 +102,7 @@ def decode_bandit_code(raw_code):
     clean_code = "\n".join([line.split(" ", 1)[-1] if " " in line else line for line in lines])
     return clean_code.replace("\\u274c", "❌").strip()
 
-# ✅ 번역 함수 (deep-translator)
+# ✅ 번역 함수 
 def translate_text(text):
     try:
         return GoogleTranslator(source="en", target="ko").translate(text)

@@ -1,0 +1,11 @@
+<!DOCTYPE html>
+<html>
+<body>
+    <div id="output"></div>
+    <script>
+        // 취약점: URL 해시 값을 그대로 innerHTML에 삽입하여 XSS 공격에 노출
+        let userInput = window.location.hash.substring(1);
+        document.getElementById("output").innerHTML = "User input: " + userInput;
+    </script>
+</body>
+</html>
